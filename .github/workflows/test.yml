@@ -1,0 +1,50 @@
+name: Redis Assignment Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - task: "Task 1: Session Storage"
+            test_file: tests/test_session.py
+          - task: "Task 2: Rate Limiter"
+            test_file: tests/test_rate_limiter.py
+          - task: "Task 3: Task Queue"
+            test_file: tests/test_queue.py
+          - task: "Bonus: Sliding Window"
+            test_file: tests/test_sliding_window.py
+
+    name: ${{ matrix.task }}
+
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest ${{ matrix.test_file }} -v
