@@ -10,6 +10,7 @@ Run tests:
 """
 
 from fastapi import FastAPI, HTTPException, Header
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import redis
 import uuid
@@ -45,14 +46,17 @@ class TaskRequest(BaseModel):
 
 @app.post("/login")
 def login(body: LoginRequest):
-    # TODO: implement session creation
-    raise HTTPException(status_code=501, detail="Not implemented")
+    session_id = str(uuid.uuid4())
+    r.set(f"session:{session_id}", body.user_id, ex=3600)
+    return {"session_id": session_id}
 
 
 @app.get("/me")
 def me(x_session_id: str = Header()):
-    # TODO: implement session lookup
-    raise HTTPException(status_code=501, detail="Not implemented")
+    user_id = r.get(f"session:{x_session_id}")
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return {"user_id": user_id}
 
 
 # ============================================================
@@ -68,8 +72,16 @@ def me(x_session_id: str = Header()):
 
 @app.get("/request")
 def rate_limited_request(user_id: str):
-    # TODO: implement rate limiting
-    raise HTTPException(status_code=501, detail="Not implemented")
+    key = f"requests:user:{user_id}"
+    pipe = r.pipeline(transaction=False)
+    pipe.incr(key)
+    pipe.expire(key, 60, nx=True)
+    count, _ = pipe.execute()
+
+    if count > 5:
+        return JSONResponse(status_code=429, content={"error": "rate limit exceeded"})
+
+    return {"status": "ok", "remaining": 5 - count}
 
 
 # ============================================================
@@ -90,14 +102,16 @@ def rate_limited_request(user_id: str):
 
 @app.post("/task")
 def add_task(body: TaskRequest):
-    # TODO: implement task enqueue
-    raise HTTPException(status_code=501, detail="Not implemented")
+    queue_length = r.lpush("task_queue", body.task)
+    return {"status": "queued", "queue_length": queue_length}
 
 
 @app.get("/task")
 def get_task():
-    # TODO: implement task dequeue
-    raise HTTPException(status_code=501, detail="Not implemented")
+    task = r.rpop("task_queue")
+    if task is None:
+        return JSONResponse(status_code=404, content={"error": "queue is empty"})
+    return {"task": task}
 
 
 # ============================================================
