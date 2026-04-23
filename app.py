@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import redis
+import time
 import uuid
 
 app = FastAPI(title="Redis Assignments")
@@ -120,4 +121,18 @@ def get_task():
 
 @app.get("/request_sliding")
 def rate_limited_request_sliding(user_id: str):
-    pass
+    key = f"requests:user:{user_id}"
+    now = time.time()
+    request_id = str(uuid.uuid4())
+
+    pipe = r.pipeline(transaction=False)
+    pipe.zremrangebyscore(key, 0, now - 60)
+    pipe.zadd(key, {request_id: now})
+    pipe.zcard(key)
+    pipe.expire(key, 60)
+    _, _, count, _ = pipe.execute()
+
+    if count > 5:
+        return JSONResponse(status_code=429, content={"error": "rate limit exceeded"})
+
+    return {"status": "ok", "remaining": 5 - count}
